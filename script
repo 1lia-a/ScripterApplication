@@ -1,38 +1,52 @@
+-- This script and the game as a whole were written specifically to demonstrate my skills.
+-- It is not a script taken from some other game. I wrote it from scratch in one evening.
+-- I tried to keep it under 200 lines of code, and as a result, excluding spaces, as shown on GitHub..
+-- I reached 200 and am not trying to deceive anyone.
+-- The structure of the script looks bad, I don't write like that.
+-- But due to the restrictions that everything must be written in one script,
+-- I threw all the logic together.
+
 --// Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local Debris            = game:GetService("Debris")
 
---// Remote
+--// Remote, used for client-server communication to activate abilities
 local AbilityFunction: RemoteFunction = ReplicatedStorage.AbilityFunction
 
---// Assets
+--// Assets, containing reusable visual assets and sound effects
 local Assets = script:WaitForChild("Assets")
 local Sounds = script:WaitForChild("Sounds")
 
 --// Utils
+
+-- Basic linear interpolation function
 local function _lerp(a, b, t)
 	return a + (b - a) * t
 end
 
+-- Quadratic Bezier curve for trajectory calculation
 local function _quadBazie(t, p0, p1, p2)
 	return _lerp(_lerp(p0, p1, t), _lerp(p1, p2, t), t)
 end
 
 --// Meta & Abilities
 
+-- AbilityMeta class stores metadata and logic for cooldown based abilities
 local AbilityMeta = {}
 AbilityMeta.__index = AbilityMeta
 
+-- Constructor for a new ability
 function AbilityMeta.new(name: string, cooldown: number, action)
 	return setmetatable({
-		Name = name,
-		Cooldown = cooldown,
-		LastUsed = 0,
-		Action = action,
+		Name = name,         -- Name of the ability
+		Cooldown = cooldown, -- Cooldown time in seconds
+		LastUsed = 0,        -- Timestamp of last usage
+		Action = action,     -- Function to execute ability logic
 	}, AbilityMeta)
 end
 
+-- Method to activate the ability if cooldown has passed
 function AbilityMeta:Activate(player, Target: Vector3)
 	if tick() - self.LastUsed >= self.Cooldown then
 		self.LastUsed = tick()
@@ -42,26 +56,25 @@ function AbilityMeta:Activate(player, Target: Vector3)
 	end
 end
 
---\\\\\\\\\\\\\\\\\\\\\\\\
+--\\\\\\\\\\\\\\\\\\\\\\\\ Ability Logic Implementation
 
-local Abilities = {}
-local Ability = {}
+local Abilities = {} -- Registry of all defined abilities
+local Ability = {}   -- Ability class with implementations
 
+-- Dash ability: Temporarily increases speed and plays visual/audio effects
 function Ability:Dash()
 	if self.Character then
 		local ABILITY_TIME: number = .5		
 		local character: Model = self.Character
 		local humanoid: Humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			-- SFX
-
+			-- SFX, Play dash sound.
 			local newSound: Sound = Sounds.Dash:Clone()
 			newSound.Parent = character.HumanoidRootPart
 			newSound:Play()
 			newSound.PlayOnRemove = true
 
-			-- VFX
-			
+			-- VFX, Clone dash particle emitters and attach to character
 			local VFX_Table = {}
 
 			for i, emitter in pairs(Assets.DashVFX:GetChildren()) do
@@ -73,7 +86,8 @@ function Ability:Dash()
 					Debris:AddItem(VFX_Table[i], ABILITY_TIME + 5)
 				end
 			end
-
+			
+			-- Temporarily make character semi-transparent
 			for _, object in pairs(character:GetDescendants()) do
 				if object:IsA("BasePart") or object:IsA("MeshPart") then
 					if object ~= character.HumanoidRootPart then
@@ -81,8 +95,9 @@ function Ability:Dash()
 					end
 				end
 			end
-
-			spawn(function()
+			
+			-- Restore transparency after delay
+			task.spawn(function()
 				task.wait(ABILITY_TIME)
 
 				for _, object in pairs(character:GetDescendants()) do
@@ -98,7 +113,7 @@ function Ability:Dash()
 				end
 			end)
 
-			-- Ability
+			-- Ability, Increase and then restore walk speed
 
 			humanoid.WalkSpeed = 56
 			task.wait(ABILITY_TIME)
@@ -107,6 +122,7 @@ function Ability:Dash()
 	end	
 end
 
+-- Explosion ability: Fires a flame projectile with arc trajectory and plays explosion effect
 function Ability:Explosion(target: Vector3)
 	if self.Character then
 		local character: Model = self.Character
@@ -116,33 +132,32 @@ function Ability:Explosion(target: Vector3)
 		local HitPart:   Part = Assets.HitPart
 		local LIFETIME:  number = 10
 		
-		-- SFX
-
+		-- SFX, Play casting flame sound
 		local AttackAtt: Attachment = HRMAtts.Attack:Clone()
 		AttackAtt.Parent = character.HumanoidRootPart
 		AttackAtt.Flame:Play()
 		
-		-- VFX
-		
+		-- VFX, Emit initial cast particles
 		for _, emitter in pairs(AttackAtt:GetChildren()) do
 			if emitter:IsA("ParticleEmitter") then
 				emitter:Emit(emitter:GetAttribute("EmitCount"))
 			end
 		end
-
+		
+		-- Clone and position projectile
 		local newArrow: Part = FireArrow:Clone()
 		newArrow.CFrame = AttackAtt.WorldCFrame
 		newArrow.Parent = workspace.Projectiles
 		
-		-- Calculate the trajectory of the arrow
-		
+		-- Calculate Bezier curve trajectory
 		local Mag = (character.HumanoidRootPart.Position - target).Magnitude
 		local TPositions = {
 			AttackAtt.WorldCFrame.Position,
 			(AttackAtt.WorldCFrame.Position + target) / 2,
 			target
 		}
-
+		
+		-- Create parts along the path (for visualization / targeting)
 		local TParts = {}
 		for i = 0, 1, .1  do
 			local newTPart = TPart:Clone()
@@ -154,7 +169,7 @@ function Ability:Explosion(target: Vector3)
 			Debris:AddItem(newTPart, LIFETIME)
 		end
 		
-		-- Launch
+		-- Tween the projectile along the path
 		
 		for _, TPart in pairs(TParts) do
 			local targetCFrame = CFrame.lookAt(newArrow.Position, TPart.Position)
@@ -167,7 +182,7 @@ function Ability:Explosion(target: Vector3)
 			Tween.Completed:Wait()
 		end
 		
-		-- VFX
+		-- VFX, Disable trail particles after tween complete.
 		
 		for _, emitter in pairs(newArrow.Att:GetChildren()) do
 			if emitter:IsA("ParticleEmitter") then
@@ -175,37 +190,40 @@ function Ability:Explosion(target: Vector3)
 			end
 		end
 		
+		-- Spawn explosion part and play explosion sound
 		local newHitPart = HitPart:Clone()
 		newHitPart.Position = target + Vector3.new(0, .25, 0)
 		newHitPart.Parent = workspace
 		newHitPart.HitSound:Play()
 		
-		task.wait(.1)
+		task.wait(.1) -- wait until cloned effects will upload to the clients.
 		
+		-- Emit explosion particles
 		for _, emitter in pairs(newHitPart:GetDescendants()) do
 			if emitter:IsA("ParticleEmitter") then
 				emitter:Emit(emitter:GetAttribute("EmitCount"))
 			end
 		end
-		
+		-- Schedule cleanup of parts
 		Debris:AddItem(newHitPart, LIFETIME)
 		Debris:AddItem(newArrow, LIFETIME)
 	end
 end
 
+-- Shield ability: Spawns a temporary shield with VFX and bounce animation
 function Ability:Shield()
 	if self.Character then
 		local LIFETIME = 3
 		local character: Model = self.Character
 
-		-- SFX
+		-- SFX, Play shield sound
 
 		local newSound: Sound = Sounds.Shield:Clone()
 		newSound.Parent = character.HumanoidRootPart
 		newSound:Play()
 		newSound.PlayOnRemove = true
 
-		-- Ability
+		-- Create and expand the shield part with animation
 
 		local newShield: Part = Assets.ShieldPart:Clone()
 		newShield.CFrame = character.HumanoidRootPart.CFrame
@@ -216,14 +234,16 @@ function Ability:Shield()
 			Size = Vector3.new(25,25,25)
 		}):Play()
 
-		task.wait(3)
-
+		task.wait(LIFETIME)
+		
+		-- VFX, Stop particles
 		for _, emitter in pairs(newShield.Core:GetChildren()) do
 			if emitter:IsA("ParticleEmitter") then
 				emitter.Enabled = false
 			end
 		end
-
+		
+		-- Collapse and fade the shield
 		TweenService:Create(newShield, TweenInfo.new(.5, Enum.EasingStyle.Bounce), {
 			Size = Vector3.new(1,1,1),
 			Transparency = 1
@@ -233,7 +253,8 @@ function Ability:Shield()
 	end
 end
 
---// Registry
+--// Ability Registration
+-- Define all abilities and their activation logic
 
 Abilities["Dash"] = AbilityMeta.new("Dash", 3, function(player)
 	local self = { Character = player.Character }
@@ -253,7 +274,8 @@ Abilities["Shield"] = AbilityMeta.new("Shield", 5, function(player)
 	self:Shield()
 end)
 
---// Remote hook
+--// Remote Function Handler
+-- Executes the appropriate ability on the server when called from the client
 
 AbilityFunction.OnServerInvoke = function(player, abilityName: string, target: Vector3)
 	local ability = Abilities[abilityName]
