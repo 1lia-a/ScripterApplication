@@ -70,7 +70,7 @@ local AbilityConfig = {  -- Ability configuration parameters
 		Duration = 0.35,
 	},
 	Shield = {
-		Size = Vector3.new(8,8,1),
+		Size = Vector3.new(25,25,25),
 		Duration = 4
 	},
 	Explosion = {
