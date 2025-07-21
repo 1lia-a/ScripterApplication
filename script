@@ -21,13 +21,18 @@ local Sounds = script:WaitForChild("Sounds")
 --// Utils
 
 -- Basic linear interpolation function
-local function _lerp(a, b, t)
+local function _lerp(a: number, b: number, t: number)
 	return a + (b - a) * t
 end
 
 -- Quadratic Bezier curve for trajectory calculation
-local function _quadBazie(t, p0, p1, p2)
+local function _quadBazie(t: number, p0: Vector3, p1: Vector3, p2: Vector3)
 	return _lerp(_lerp(p0, p1, t), _lerp(p1, p2, t), t)
+end	
+
+-- Checks if a character has a HumanoidRootPart
+local function _CharacterHasHRP(character: Model)
+	return character and character:FindFirstChild("HumanoidRootPart") ~= nil
 end
 
 --// Meta & Abilities
@@ -56,15 +61,27 @@ function AbilityMeta:Activate(player, Target: Vector3)
 	end
 end
 
---\\\\\\\\\\\\\\\\\\\\\\\\ Ability Logic Implementation
-
-local Abilities = {} -- Registry of all defined abilities
-local Ability = {}   -- Ability class with implementations
+-- Ability Logic Implementation
+local Abilities = {}     -- Registry of all defined abilities
+local Ability = {}       -- Ability class with implementations
+local AbilityConfig = {  -- Ability configuration parameters
+	Dash = {
+		Speed = 56,
+		Duration = 0.35,
+	},
+	Shield = {
+		Size = Vector3.new(8,8,1),
+		Duration = 4
+	},
+	Explosion = {
+		Speed = 1000,
+		Duration = 10
+	}
+}
 
 -- Dash ability: Temporarily increases speed and plays visual/audio effects
 function Ability:Dash()
-	if self.Character then
-		local ABILITY_TIME: number = .5		
+	if _CharacterHasHRP(self.Character) then	
 		local character: Model = self.Character
 		local humanoid: Humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
@@ -83,7 +100,7 @@ function Ability:Dash()
 					VFX_Table[i].Parent = character.HumanoidRootPart
 					VFX_Table[i].Enabled = true
 
-					Debris:AddItem(VFX_Table[i], ABILITY_TIME + 5)
+					Debris:AddItem(VFX_Table[i], AbilityConfig.Dash.Duration + 5)
 				end
 			end
 			
@@ -98,7 +115,7 @@ function Ability:Dash()
 			
 			-- Restore transparency after delay
 			task.spawn(function()
-				task.wait(ABILITY_TIME)
+				task.wait(AbilityConfig.Dash.Duration)
 
 				for _, object in pairs(character:GetDescendants()) do
 					if object:IsA("BasePart") or object:IsA("MeshPart") then
@@ -115,22 +132,23 @@ function Ability:Dash()
 
 			-- Ability, Increase and then restore walk speed
 
-			humanoid.WalkSpeed = 56
-			task.wait(ABILITY_TIME)
+			humanoid.WalkSpeed = AbilityConfig.Dash.Speed
+			task.wait(AbilityConfig.Dash.Duration)
 			humanoid.WalkSpeed = 16
 		end
+	else
+		warn("Humanoid not found for player", self.Name)
 	end	
 end
 
 -- Explosion ability: Fires a flame projectile with arc trajectory and plays explosion effect
 function Ability:Explosion(target: Vector3)
-	if self.Character then
+	if _CharacterHasHRP(self.Character) then
 		local character: Model = self.Character
 		local FireArrow: Part = Assets.FireArrow
 		local HRMAtts:   Part = Assets.HRMAtts
 		local TPart:     Part = Assets.TrajectoryPart
 		local HitPart:   Part = Assets.HitPart
-		local LIFETIME:  number = 10
 		
 		-- SFX, Play casting flame sound
 		local AttackAtt: Attachment = HRMAtts.Attack:Clone()
@@ -166,7 +184,7 @@ function Ability:Explosion(target: Vector3)
 
 			table.insert(TParts, newTPart)
 
-			Debris:AddItem(newTPart, LIFETIME)
+			Debris:AddItem(newTPart, AbilityConfig.Explosion.Duration)
 		end
 		
 		-- Tween the projectile along the path
@@ -175,7 +193,7 @@ function Ability:Explosion(target: Vector3)
 			local targetCFrame = CFrame.lookAt(newArrow.Position, TPart.Position)
 			newArrow.CFrame = targetCFrame
 
-			local Tween = TweenService:Create(newArrow, TweenInfo.new(Mag/1000, Enum.EasingStyle.Linear), {
+			local Tween = TweenService:Create(newArrow, TweenInfo.new(Mag/AbilityConfig.Explosion.Speed, Enum.EasingStyle.Linear), {
 				Position = TPart.Position
 			})
 			Tween:Play()
@@ -205,15 +223,16 @@ function Ability:Explosion(target: Vector3)
 			end
 		end
 		-- Schedule cleanup of parts
-		Debris:AddItem(newHitPart, LIFETIME)
-		Debris:AddItem(newArrow, LIFETIME)
+		Debris:AddItem(newHitPart, AbilityConfig.Explosion.Duration)
+		Debris:AddItem(newArrow, AbilityConfig.Explosion.Duration)
+	else
+		warn("Humanoid not found for player", self.Name)
 	end
 end
 
 -- Shield ability: Spawns a temporary shield with VFX and bounce animation
 function Ability:Shield()
-	if self.Character then
-		local LIFETIME = 3
+	if _CharacterHasHRP(self.Character) then
 		local character: Model = self.Character
 
 		-- SFX, Play shield sound
@@ -231,10 +250,10 @@ function Ability:Shield()
 		newShield.Parent = workspace
 
 		TweenService:Create(newShield, TweenInfo.new(1, Enum.EasingStyle.Bounce), {
-			Size = Vector3.new(25,25,25)
+			Size = AbilityConfig.Shield.Size
 		}):Play()
 
-		task.wait(LIFETIME)
+		task.wait(AbilityConfig.Shield.Duration)
 		
 		-- VFX, Stop particles
 		for _, emitter in pairs(newShield.Core:GetChildren()) do
@@ -249,7 +268,9 @@ function Ability:Shield()
 			Transparency = 1
 		}):Play()
 
-		Debris:AddItem(newShield, 5)
+		Debris:AddItem(newShield, AbilityConfig.Shield.Duration + 3)
+	else
+		warn("Humanoid not found for player", self.Name)
 	end
 end
 
